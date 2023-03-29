@@ -1,0 +1,120 @@
+model EPower2
+uses "mmxprs"
+
+declarations
+Source: set of string
+Emiss: set of string
+NTimes = 6
+Times: set of real
+PeriodLength: array(Times) of real
+Demand: array(Times) of real
+MaxOutput: array(Source) of real
+RunningCost: array(Source) of real
+IncreaseCost: array(Source) of real
+Emissions: array(Emiss, Source) of real
+EmissionsLimit: array(Emiss) of real
+ElectricityPrice: real
+MaxHydroReserve: real
+NaturalHydroInflow: real
+HydroPowerEfficiencyFrac: real
+SolarMaxOutput: array(Times) of real
+WindMultiplier: real
+
+Output: array(Source, Times) of mpvar
+SolarOutput: array(Times) of mpvar
+IncreaseOutput: array(Source, Times) of mpvar
+HydroPowerPump: array(Times) of mpvar
+ReserveEnergy: array(Times) of mpvar
+end-declarations
+
+initializations from "EPower.dat"
+Emiss Source Times PeriodLength Demand
+MaxOutput RunningCost IncreaseCost Emissions
+EmissionsLimit ElectricityPrice MaxHydroReserve
+NaturalHydroInflow HydroPowerEfficiencyFrac SolarMaxOutput WindMultiplier
+end-initializations
+
+
+forall(t in Times) do
+  TotalOutput(t):= sum(s in Source) Output(s,t)*PeriodLength(t)
+end-do
+
+!costs
+forall(s in Source) do
+  TotalRunningCost(s):= sum(t in Times) Output(s,t)*PeriodLength(t)*RunningCost(s)
+  TotalIncreaseCost(s):= sum(t in Times) IncreaseOutput(s,t)*IncreaseCost(s)
+end-do
+
+!objective
+NetIncome:= sum(t in Times) (TotalOutput(t)+SolarOutput(t))*ElectricityPrice
+NetRunningCost:= sum(s in Source) TotalRunningCost(s)
+NetIncreaseCost:= sum(s in Source) TotalIncreaseCost(s)
+NetCost:= NetRunningCost + NetIncreaseCost
+NetProfit:= NetIncome - NetCost
+
+!constraints
+forall(t in Times) do
+  DemandCS(t):= HydroPowerPump(t) = (sum(s in Source) Output(s,t))-Demand(t)
+
+  if t = 1 then
+    ReserveCS(t):= ReserveEnergy(t) = ReserveEnergy(NTimes)-(Output('Hydro',t)*PeriodLength(t))+
+    (HydroPowerEfficiencyFrac*HydroPowerPump(t)*PeriodLength(t)) + (NaturalHydroInflow*PeriodLength(t))
+    forall(s in Source) do
+      IncreaseCS(s,t):= IncreaseOutput(s,t) >= Output(s,t) - Output(s, NTimes)
+    end-do
+  else
+    ReserveCS(t):= ReserveEnergy(t) = ReserveEnergy(t-1)-(Output('Hydro',t)*PeriodLength(t))+
+    (HydroPowerEfficiencyFrac*HydroPowerPump(t)*PeriodLength(t)) + (NaturalHydroInflow*PeriodLength(t))
+    forall(s in Source) do
+      IncreaseCS(s,t):= IncreaseOutput(s,t) >= Output(s,t) - Output(s, t-1)
+    end-do
+  end-if
+
+
+  forall(s in Source) do
+    OutputCS(s,t):= Output(s,t) <= MaxOutput(s)
+  end-do
+  OutputCS('Wind',t) := Output('Wind',t) <= MaxOutput('Wind')*WindMultiplier
+
+  SolarCS(t):= SolarOutput(t) <= SolarMaxOutput(t)
+
+
+  forall(e in Emiss) do
+    Emitted(e,t):= sum(s in Source) Output(s,t)*Emissions(e,s)
+  end-do
+
+  ReserveEnergyCS(t):= ReserveEnergy(t) <= MaxHydroReserve
+end-do
+
+forall(e in Emiss) do
+  EmissionCS(e):= sum(t in Times) Emitted(e,t)*PeriodLength(t) <= EmissionsLimit(e)
+end-do
+
+maximize(NetProfit)
+
+writeln('profit is £', strfmt(getsol(NetProfit), 10,0))
+
+
+writeln
+forall (s in Source) do
+    write(s)
+    forall (t in Times) do
+      write(":", strfmt(getsol(Output(s, t)), 6, 0))
+    end-do
+    write(", MaxOutput = ",MaxOutput(s))
+    writeln
+end-do
+write("Solar")
+forall (t in Times) do
+  write(",", strfmt(getsol(SolarOutput(t)), 6, 0))
+end-do
+writeln
+forall (t in Times) do
+  writeln("Demand: ", Demand(t)*PeriodLength(t),
+  " and Total output: ", strfmt(getsol(TotalOutput(t)), 5),
+  " and Reserve: ", strfmt(getsol(ReserveEnergy(t)), 5))
+  writeln
+end-do
+writeln
+
+end-model
