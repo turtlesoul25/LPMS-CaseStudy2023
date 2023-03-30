@@ -11,20 +11,23 @@ PeriodLength:	[6		2		8		4		2		2]
 Demand:			[12000	18000	20000	22000	20000	18000]
 
 ! Source properties (should wind be 12k or 6k?)
+! Original max output
+!MaxOutput:      [6000 6000	5000  12000	 20000	2000]
 MaxOutput:      [6000 6000	5000  12000	 20000	2000]
 RunningCost:    [  40	30	  50      2	   100 	   5]
 IncreaseCost:   [  60	80 1e+10      1	    50	   5]
 
 SolarMaxOutput: [0  900 2700  900    0 0]
 
-WindMultiplier: 0
+WindMultiplier: 0.5
+SpringWindMultiplier: 0
 
 Emissions:      [0.0   0.4     0      0      0     0
                  0.8   1.2     0      0      0     0]
 
 
 ! carbon was originally 200k
-EmissionsLimit: [30000 200000]
+EmissionsLimit: [30000 100000]
 
 ElectricityPrice:			[32]
 
