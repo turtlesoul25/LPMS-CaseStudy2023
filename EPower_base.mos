@@ -91,7 +91,9 @@ end-do
 
 maximize(NetProfit)
 
-writeln('profit is £', strfmt(getsol(NetProfit), 10,0))
+writeln('Profit is £', strfmt(getsol(NetProfit), 10,0))
+writeln('Income is £', strfmt(getsol(NetIncome), 10,0))
+writeln('Costs are £', strfmt(getsol(NetCost), 10,0))
 
 
 writeln
@@ -110,7 +112,7 @@ forall (s in Source) do
     forall (t in Times) do
       write(",", strfmt(getsol(IncreaseOutput(s, t)), 6, 0))
     end-do
-    write(", inc_cost = ", strfmt(getsol(TotalIncreaseCost(s)), 9, 0))
+    write(", Increase cost = ", strfmt(getsol(TotalIncreaseCost(s)), 6, 0))
     writeln
 end-do
 
@@ -118,12 +120,22 @@ writeln
 forall (t in Times) do
   writeln("Demand: ", Demand(t)*PeriodLength(t),
   " and Total output: ", strfmt(getsol(TotalOutput(t)), 5),
-  " and Reserve: ", strfmt(getsol(ReserveEnergy(t)), 5), 
+  " and Reserve: ", strfmt(getsol(ReserveEnergy(t)), 5),
   " and Power Demand for Pump: ", strfmt(getsol(HydroPowerPump(t)), 5))
   ! " and emissions (CO2): ", strfmt(getsol(Emitted("CO2",t)),9),
   ! " and emissions(sulphur): ", strfmt(getsol(Emitted("Sulphur",t)),9))
   writeln
 end-do
 writeln
+
+writeln
+forall(t in Times) do
+  if getslack(DemandCS(t)) = 0 then
+    writeln("Demand for time period", t, " is ", getdual(DemandCS(t)))
+  else 
+    writeln("Hi")
+  end-if
+end-do
+
 
 end-model
