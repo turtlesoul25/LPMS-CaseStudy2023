@@ -1,0 +1,32 @@
+Total Income,  13824000
+Total Costs,  12016333
+Total Profit,   1807667
+
+Outputs from each source per time period
+Time Period,Gas,Coal,Nuclear,Wind,Interconnect,Hydro
+1, 4917,    0, 2833, 6000,    0,    0
+2, 6000, 2767, 2833, 6000,    0,  400
+3, 6000, 4017, 2833, 6000,    0, 1150
+4, 6000, 5167, 2833, 6000,    0, 2000
+5, 6000, 5167, 2833, 6000,    0,    0
+6, 6000, 3167, 2833, 6000,    0,    0
+Max. Output,6000,6000,5000,6000,20000,2000
+
+Increase in Output for each source per time period
+Time Period,Gas,Coal,Nuclear,Wind,Interconnect,Hydro
+1,     0,     0,     0,     0,     0,     0,     0
+2,  1083,  2767,     0,     0,     0,   400,     0
+3,     0,  1250,     0,     0,     0,   750,     0
+4,     0,  1150,     0,     0,     0,   850,     0
+5,     0,     0,     0,     0,     0,     0,     0
+6,     0,     0,     0,     0,     0,     0,     0
+Total increase in cost,   65000,  413333,       0,       0,       0,   10000,       0
+
+Demand and Water Report
+Time,Demand,Total Output,Reserve,Power Demand for Pump
+1,72000,82500,25000, 1750
+2,36000,36000,25000,    0
+3,160000,160000,19000,    0
+4,88000,88000,12600,    0
+5,40000,40000,13400,    0
+6,36000,36000,14200,    0
