@@ -1,0 +1,352 @@
+model EPower_all
+uses "mmxprs"
+
+declarations
+Source: set of string
+Emiss: set of string
+NTimes = 6
+Times: set of real
+PeriodLength: array(Times) of real
+Demand: array(Times) of real
+MaxOutput: array(Source) of real
+RunningCost: array(Source) of real
+IncreaseCost: array(Source) of real
+Emissions: array(Emiss, Source) of real
+EmissionsLimit: array(Emiss) of real
+ElectricityPrice: real
+MaxHydroReserve: real
+NaturalHydroInflow: real
+HydroPowerEfficiencyFrac: real
+WindMultiplier: real
+SolarMaxOutput: array(Times) of real
+
+Output: array(Source, Times) of mpvar
+SolarOutput: array(Times) of mpvar
+IncreaseOutput: array(Source, Times) of mpvar
+HydroPowerPump: array(Times) of mpvar
+ReserveEnergy: array(Times) of mpvar
+end-declarations
+
+initializations from "EPower.dat"
+Emiss Source
+Times PeriodLength Demand
+MaxOutput SolarMaxOutput WindMultiplier
+RunningCost IncreaseCost ElectricityPrice
+Emissions EmissionsLimit
+MaxHydroReserve NaturalHydroInflow HydroPowerEfficiencyFrac
+end-initializations
+
+forward procedure objective
+forward procedure header
+forward procedure OutputReport
+forward procedure IncreaseReport
+forward procedure WaterReport
+
+
+
+!! MODEL
+
+! set up cases to run specific cases of the model
+base_case           := 1  ! base case for current policy
+base_case_CO2_red   := 2  ! Under reduced CO2 policy without solar power
+solar_case          := 3  ! Under reduced CO2 policy with solar power
+solar_case_no_gas   := 4  ! Case 3 without gas as a source of power
+solar_case_no_coal  := 5  ! Case 3 without coal as a source of power
+solar_case_no_nuc   := 6  ! Case 3 without nuclear as a source of power
+! Case to investigate change in profit if we increase max output by having more turbines
+extension           := 7
+
+
+! choose the case name for which_case based on the case you want to run
+which_case := base_case
+
+! Reduce CO2 limits for all but the first case
+if which_case in 2..7 then
+ EmissionsLimit("CO2") := 0.5*EmissionsLimit("CO2")
+end-if
+
+
+if which_case in 3..6 then
+  ! Wind = 0 in spring for our scenario
+  WindMultiplier := 0
+elif which_case in 1..2 then
+  ! No solar power considered for cases 1 and 2
+  forall(t in Times) SolarMaxOutput(t) := 0
+elif (which_case = 7) then
+! a day where we generate power of 35% of the maximum wind output
+! for the extension case
+  WindMultiplier := 0.35 
+end-if
+
+! remove dirty fuels for cases 4-6
+if which_case = 4 then
+  MaxOutput("Gas") := 0
+elif which_case = 5 then
+  MaxOutput("Coal") := 0
+elif which_case = 6 then
+  MaxOutput("Nuclear") := 0
+end-if
+
+
+
+writeln("We are looking at case ", which_case)
+
+! Power outputs
+case which_case of
+1, 2: forall(t in Times) do ! without solar
+        TotalOutput(t):= sum(s in Source) Output(s,t)*PeriodLength(t)
+      end-do
+3..7: forall(t in Times) do ! with solar
+        TotalOutput(t):= ((sum(s in Source) Output(s,t))+ SolarOutput(t))*PeriodLength(t)
+      end-do
+end-case
+
+
+
+! Costs
+forall(s in Source) do
+  TotalRunningCost(s):= sum(t in Times) Output(s,t)*PeriodLength(t)*RunningCost(s)
+  TotalIncreaseCost(s):= sum(t in Times) IncreaseOutput(s,t)*IncreaseCost(s)
+end-do
+
+! Objective function
+NetIncome:= sum(t in Times) Demand(t)*PeriodLength(t)*ElectricityPrice
+NetRunningCost:= sum(s in Source) TotalRunningCost(s)
+NetIncreaseCost:= sum(s in Source) TotalIncreaseCost(s)
+NetCost:= NetRunningCost + NetIncreaseCost
+NetProfit:= NetIncome - NetCost
+
+! constraints
+case which_case of
+1, 2: forall(t in Times) do
+        ! Power demand for pump
+        DemandCS(t):= HydroPowerPump(t) = sum(s in Source) Output(s,t)-Demand(t)
+        ! Solar output contraint
+        SolarCS(t):= SolarOutput(t) = SolarMaxOutput(t) ! SolarMaxOutput defined as 0
+      end-do
+3..7: forall(t in Times) do
+        ! Power demand for pump
+        DemandCS(t):= HydroPowerPump(t) = (sum(s in Source) Output(s,t))+SolarOutput(t)-Demand(t)
+        ! Solar output contraint
+        SolarCS(t):= SolarOutput(t) <= SolarMaxOutput(t)
+      end-do
+end-case
+
+
+
+forall(t in Times) do
+
+  ! Reserve energy constraints modelled as inventory problem
+  if t = 1 then
+    ReserveCS(t):= ReserveEnergy(t) = ReserveEnergy(NTimes)-(Output('Hydro',t)*PeriodLength(t))+
+    (HydroPowerEfficiencyFrac*HydroPowerPump(t)*PeriodLength(t)) + (NaturalHydroInflow*PeriodLength(t))
+    forall(s in Source) do
+      IncreaseCS(s,t):= IncreaseOutput(s,t) >= Output(s,t) - Output(s, NTimes)
+    end-do
+  else
+    ReserveCS(t):= ReserveEnergy(t) = ReserveEnergy(t-1)-(Output('Hydro',t)*PeriodLength(t))+
+    (HydroPowerEfficiencyFrac*HydroPowerPump(t)*PeriodLength(t)) + (NaturalHydroInflow*PeriodLength(t))
+    forall(s in Source) do
+      IncreaseCS(s,t):= IncreaseOutput(s,t) >= Output(s,t) - Output(s, t-1)
+    end-do
+  end-if
+
+
+  ! Maximum output constraint
+  forall(s in Source) do
+    if s = 'Wind' then ! Max output for wind changes by a single multiplier
+      OutputCS(s,t) := Output(s,t) <= MaxOutput(s)*WindMultiplier
+    else
+      OutputCS(s,t):= Output(s,t) <= MaxOutput(s)
+    end-if
+  end-do
+
+  ! Calculate emissions per time period
+  forall(e in Emiss) do
+    Emitted(e,t):= sum(s in Source) Output(s,t)*Emissions(e,s)*PeriodLength(t)
+  end-do
+
+  ! Constraint for maximum energy in hydro reservoire
+  ReserveEnergyCS(t):= ReserveEnergy(t) <= MaxHydroReserve
+end-do
+
+! Emission constraints
+forall(e in Emiss) do
+  EmissionCS(e):= sum(t in Times) Emitted(e,t) <= EmissionsLimit(e)
+end-do
+
+
+
+
+
+
+!----------------------------------------------------------------------
+! Print and save results for all cases except the extension
+if which_case in 1..6 then
+  ! Solve the LP by maximising the objective function
+  maximize(NetProfit)
+
+
+  ! Write results in XPress
+  writeln
+  writeln("----------------------------------")
+
+  ! Results on objective, costs and income
+  objective
+  writeln
+
+  ! Output Schedule
+  writeln("Outputs from each source per time period:")
+  header
+  OutputReport
+
+  ! Increase costs
+  writeln
+  writeln("Increase in Output for each source per time period:")
+  header
+  IncreaseReport
+
+  ! Demand, total output, energy in reserve, power demand for hydro-pump in each time period
+  writeln
+  writeln
+  writeln("Demand and Water Report:")
+  WaterReport
+
+
+  ! INTITIALISING CSV
+
+  ! Initialise csv file names for each case separately
+  case which_case of
+  1: csv_name := "EPower_case1.csv"
+  2: csv_name := "EPower_case2.csv"
+  3: csv_name := "EPower_case3.csv"
+  4: csv_name := "EPower_case4.csv"
+  5: csv_name := "EPower_case5.csv"
+  6: csv_name := "EPower_case6.csv"
+  end-case
+
+
+
+  ! Write results in a CSV file
+  fopen(csv_name, F_OUTPUT)
+
+  ! Results on objective, costs and income
+  objective
+  writeln
+
+  ! Output Schedule
+  writeln("Outputs from each source per time period")
+  header
+  OutputReport
+
+  ! Increase costs
+  writeln
+  writeln("Increase in Output for each source per time period")
+  header
+  IncreaseReport
+  writeln
+
+  ! Demand, total output, energy in reserve, power demand for hydro-pump in each time period
+  writeln
+  writeln("Demand and Water Report")
+  WaterReport
+
+  fclose(F_OUTPUT)
+  ! CLOSING CSV SECTION
+end-if
+
+! Introduce procedures to make printing of multiple results easy
+procedure objective
+  writeln("Total Income", ",", strfmt(getsol(NetIncome), 10,0))
+  writeln("Total Costs", ",", strfmt(getsol(NetCost), 10,0))
+  writeln("Total Profit", ",", strfmt(getsol(NetProfit), 10,0))
+end-procedure
+
+procedure header
+  write("Time Period")
+  forall(s in Source) write(",",s)
+  if which_case in 3..6 then
+    write(",", "Solar")
+  end-if
+end-procedure
+
+procedure OutputReport
+  forall (t in Times) do
+    writeln
+    write(t)
+    forall(s in Source) do
+      write(",", strfmt(getsol(Output(s,t)), 5, 0))
+    end-do
+    if which_case in 3..6 then
+      write(",", strfmt(getsol(SolarOutput(t)), 5, 0))
+    end-if
+  end-do
+  writeln
+  write("Max. Output")
+  forall (s in Source) do
+    if s = "Wind" then
+      write(",", MaxOutput(s)*WindMultiplier)
+    else
+      write(",", MaxOutput(s))
+    end-if
+  end-do
+  if which_case in 3..6 then
+      write(", N/A")
+    end-if
+  writeln
+end-procedure
+
+procedure IncreaseReport
+  forall (t in Times) do
+    writeln
+    write(t)
+    forall(s in Source) do
+      write(",", strfmt(getsol(IncreaseOutput(s,t)), 6, 0))
+    end-do
+    write(",", strfmt(0, 6, 0))
+  end-do
+  writeln
+  write("Total increase in cost")
+  forall (s in Source) write(",", strfmt(getsol(TotalIncreaseCost(s)), 8, 0))
+  write(",", strfmt(0, 8, 0))
+end-procedure
+
+procedure WaterReport
+  write("Time", ",", "Demand", ",", "Total Output", ",", "Reserve", ",", "Power Demand for Pump")
+  forall(t in Times) do
+  writeln
+  write(t)
+  write(",", Demand(t)*PeriodLength(t), ",",
+  strfmt(getsol(TotalOutput(t)), 5), ",",
+  strfmt(getsol(ReserveEnergy(t)), 5), ",",
+  strfmt(getsol(HydroPowerPump(t)), 5))
+  end-do
+end-procedure
+
+! END PROCEDURES
+
+
+
+!----------------------------------------------------------------------
+
+! Save Extension scenario results to a CSV
+if (which_case = 7) then
+  fopen("Extension.csv", F_OUTPUT)
+  IncWindOutput := 0
+  writeln
+  writeln("Maximum output from wind, Profit")
+  repeat
+    forall(t in Times) do
+      OutputCS("Wind",t) := Output("Wind",t) <= (MaxOutput("Wind") + IncWindOutput)*WindMultiplier
+    end-do
+    maximise(NetProfit)
+    writeln(MaxOutput("Wind") + IncWindOutput, ",", strfmt(getsol(NetProfit), 9, 0))
+    IncWindOutput += 1000
+  until IncWindOutput > 6000
+  fclose(F_OUTPUT)
+end-if
+
+
+
+end-model
+
