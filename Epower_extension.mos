@@ -54,11 +54,13 @@ solar_case_no_gas   := 4  ! Case 3 without gas as a source of power
 solar_case_no_coal  := 5  ! Case 3 without coal as a source of power
 solar_case_no_nuc   := 6  ! Case 3 without nuclear as a source of power
 ! Case to investigate change in profit if we increase max output by having more turbines
-extension           := 7
-
+add_turbines        := 7
+! Case to investigate when the CO2 reductions go from proit to loss
+investigate_C02_red := 8 
 
 ! choose the case name for which_case based on the case you want to run
 which_case := base_case
+
 
 ! Reduce CO2 limits for all but the first case
 if which_case in 2..7 then
@@ -66,17 +68,16 @@ if which_case in 2..7 then
 end-if
 
 
-if which_case in 3..6 then
-  ! Wind = 0 in spring for our scenario
-  WindMultiplier := 0
-elif which_case in 1..2 then
-  ! No solar power considered for cases 1 and 2
-  forall(t in Times) SolarMaxOutput(t) := 0
-elif (which_case = 7) then
-! a day where we generate power of 35% of the maximum wind output
-! for the extension case
-  WindMultiplier := 0.35 
-end-if
+case which_case of
+  1, 2, 8: forall(t in Times) SolarMaxOutput(t) := 0 ! No solar power considered 
+    
+  3..6:    WindMultiplier := 0 ! Solar case, no wind on day in spring
+  
+  7:       WindMultiplier := 0.35 ! a day where we generate power of 35% of the maximum wind output
+           ! for the additional turbines case
+end-case
+
+
 
 ! remove dirty fuels for cases 4-6
 if which_case = 4 then
@@ -88,19 +89,20 @@ elif which_case = 6 then
 end-if
 
 
-
+writeln
 writeln("We are looking at case ", which_case)
+writeln
+
 
 ! Power outputs
 case which_case of
-1, 2: forall(t in Times) do ! without solar
+1, 2, 8: forall(t in Times) do ! without solar
         TotalOutput(t):= sum(s in Source) Output(s,t)*PeriodLength(t)
       end-do
 3..7: forall(t in Times) do ! with solar
         TotalOutput(t):= ((sum(s in Source) Output(s,t))+ SolarOutput(t))*PeriodLength(t)
       end-do
 end-case
-
 
 
 ! Costs
@@ -118,7 +120,7 @@ NetProfit:= NetIncome - NetCost
 
 ! constraints
 case which_case of
-1, 2: forall(t in Times) do
+1, 2, 8: forall(t in Times) do
         ! Power demand for pump
         DemandCS(t):= HydroPowerPump(t) = sum(s in Source) Output(s,t)-Demand(t)
         ! Solar output contraint
@@ -181,7 +183,7 @@ end-do
 
 
 !----------------------------------------------------------------------
-! Print and save results for all cases except the extension
+! Print and save results for all cases except the adding turbines case
 if which_case in 1..6 then
   ! Solve the LP by maximising the objective function
   maximize(NetProfit)
@@ -329,9 +331,9 @@ end-procedure
 
 !----------------------------------------------------------------------
 
-! Save Extension scenario results to a CSV
+! Save additional turbines scenario results to a CSV
 if (which_case = 7) then
-  fopen("Extension.csv", F_OUTPUT)
+  fopen("add_turbines.csv", F_OUTPUT)
   IncWindOutput := 0
   writeln
   writeln("Maximum output from wind, Profit")
@@ -347,6 +349,19 @@ if (which_case = 7) then
 end-if
 
 
+if (which_case = 8) then
+  fopen("CO2_reductions.csv", F_OUTPUT)
+  Reduce_CO2 := 1.00
+  writeln
+  writeln("Percentage of CO2 limit, Profit/Loss")
+  repeat
+    EmissionCS("CO2"):= sum(t in Times) Emitted("CO2",t) <= EmissionsLimit("CO2")*Reduce_CO2
+    maximise(NetProfit)
+    writeln(Reduce_CO2*100, ",", strfmt(getsol(NetProfit), 9, 0))
+    Reduce_CO2 -= 0.05
+  until Reduce_CO2 < 0.5
+  fclose(F_OUTPUT)
+end-if
 
 end-model
 

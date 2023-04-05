@@ -12,8 +12,10 @@ MaxOutput:      [6000 6000	5000  12000	 20000	2000]
 RunningCost:    [  40	30	  50      2	   100 	   5]
 IncreaseCost:   [  60	80 1e+10      1	    50	   5]
 
+!MaxOutput for solar in each time period
 SolarMaxOutput: [0  900 2700  900    0 0]
 
+!Before solar panels are installed
 WindMultiplier: 0.5
 
 Emissions:      [0.0   0.4     0      0      0     0
@@ -24,6 +26,7 @@ EmissionsLimit: [30000 200000]
 
 ElectricityPrice:			[32]
 
+!Data about hydro-pump storage
 MaxHydroReserve:			[25000]
 NaturalHydroInflow:			[400]
 HydroPowerEfficiencyFrac:	[0.8]
